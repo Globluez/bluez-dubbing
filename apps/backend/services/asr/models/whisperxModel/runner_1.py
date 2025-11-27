@@ -1,15 +1,19 @@
-import contextlib
 import gc
+import contextlib
 import json
 import logging
 import os
 import sys
 import time
-
 import torch
 import whisperx
 from dotenv import load_dotenv
 from whisperx.diarize import DiarizationPipeline
+
+# Explicitly fix the whisperx.diarize logger (otherwise it logs to stdout, it is a new issue in latest whisperx)
+_diarize_logger = logging.getLogger("whisperx.diarize")
+_diarize_logger.handlers = [logging.StreamHandler(sys.stderr)]
+_diarize_logger.propagate = False
 
 from common_schemas.models import ASRResponse, Segment, Word
 from common_schemas.utils import convert_whisperx_result_to_Segment, create_word_segments

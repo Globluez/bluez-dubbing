@@ -1,4 +1,4 @@
-.PHONY: start-ui start-api stack-up stop restart check-ports test
+.PHONY: start-ui start-api stack-up stop restart check-ports test install-dep install-model-dep
 
 ROOT := $(CURDIR)
 BACKEND_ROOT := $(ROOT)/apps/backend
@@ -6,7 +6,10 @@ PYTHONPATH_BASE := $(BACKEND_ROOT):$(ROOT)
 UV ?= uv
 RELOAD ?= --reload
 UI_PORT ?= 5173
+SERVICES := asr translation tts orchestrator
 export UV_CACHE_DIR := $(ROOT)/.uv_cache
+# Prefer system cuDNN over bundled nvidia-cudnn-cu12 to avoid version mismatch
+export LD_LIBRARY_PATH := /usr/lib/x86_64-linux-gnu:$(LD_LIBRARY_PATH)
 
 define start_service
 	@echo "▶ starting $(1) service on port $(2)"
@@ -72,8 +75,28 @@ test:
 
 install-dep:
 	@echo "Installing all service dependencies..."
-	@cd apps/backend/services/asr && uv sync
-	@cd apps/backend/services/translation && uv sync
-	@cd apps/backend/services/tts && uv sync
-	@cd apps/backend/services/orchestrator && uv sync
+	@for service in $(SERVICES); do \
+		echo "▶ $$service"; \
+		( cd apps/backend/services/$$service && $(UV) sync ); \
+	done
+	@$(MAKE) --no-print-directory install-model-dep
 	@echo "All dependencies installed."
+
+install-model-dep:
+	@echo "Installing model dependencies..."
+	@for service in $(SERVICES); do \
+		models_dir="apps/backend/services/$$service/models"; \
+		if [ -d "$$models_dir" ]; then \
+			echo "▶ $$service models"; \
+			for model_dir in "$$models_dir"/*; do \
+				if [ -d "$$model_dir" ]; then \
+					if [ -f "$$model_dir/pyproject.toml" ]; then \
+						echo "  -> $$model_dir"; \
+						( cd "$$model_dir" && $(UV) sync ); \
+					else \
+						echo "  -> $$model_dir (skipping: no pyproject.toml)"; \
+					fi; \
+				fi; \
+			done; \
+		fi; \
+	done
