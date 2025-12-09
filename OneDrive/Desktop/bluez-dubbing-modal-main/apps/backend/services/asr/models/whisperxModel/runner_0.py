@@ -51,6 +51,11 @@ if __name__ == "__main__":
             device = extra.get("device") or os.getenv("WHISPERX_DEVICE") \
                      or ("cuda" if torch.cuda.is_available() else "cpu")
 
+            # Force float32 on CPU to avoid "Requested float16 compute type" error
+            if device == "cpu" and compute_type == "float16":
+                logger.warning("⚠️ Device is CPU but compute_type is float16. Forcing float32 to prevent crash.")
+                compute_type = "float32"
+
             logger.info(
                 "Starting transcription run for audio=%s model=%s device=%s batch_size=%s compute_type=%s",
                 req.audio_url,
