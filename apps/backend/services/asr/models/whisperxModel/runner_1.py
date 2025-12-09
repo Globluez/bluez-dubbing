@@ -48,9 +48,12 @@ if __name__ == "__main__":
             min_speakers = extra.get("min_speakers")
             max_speakers = extra.get("max_speakers")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = extra.get("device") or os.getenv("WHISPERX_DEVICE") \
+                     or ("cuda" if torch.cuda.is_available() else "cpu")
+
             if device == "cpu":
                 logger.info("Running alignment on CPU.")
+
 
             logger.info(
                 "Starting alignment for audio=%s language=%s diarize=%s min_speakers=%s max_speakers=%s",
