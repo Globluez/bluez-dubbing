@@ -4,7 +4,7 @@ ROOT := $(CURDIR)
 BACKEND_ROOT := $(ROOT)/apps/backend
 PYTHONPATH_BASE := $(BACKEND_ROOT):$(ROOT)
 UV ?= uv
-RELOAD ?= --reload
+RELOAD ?= 
 UI_PORT ?= 5173
 export UV_CACHE_DIR := $(ROOT)/.uv_cache
 
