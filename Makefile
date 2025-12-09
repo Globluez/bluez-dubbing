@@ -10,7 +10,7 @@ export UV_CACHE_DIR := $(ROOT)/.uv_cache
 
 define start_service
 	@echo "▶ starting $(1) service on port $(2)"
-	@cd apps/backend/services/$(1) && $(strip $(3)) PYTHONPATH=$(PYTHONPATH_BASE) $(UV) run uvicorn app.main:app $(RELOAD) --host 0.0.0.0 --port $(2) &
+	@cd apps/backend/services/$(1) && $(strip $(3)) PYTHONPATH=$(PYTHONPATH_BASE) $(UV) run uvicorn app.main:app --host 0.0.0.0 --port $(2) &
 endef
 
 define stop_port
