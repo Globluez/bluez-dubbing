@@ -1,3 +1,4 @@
+import os
 import contextlib
 import gc
 import json
@@ -39,16 +40,14 @@ if __name__ == "__main__":
 
         with contextlib.redirect_stdout(sys.stderr):
             
-            whisper_model = extra.get("model_name", "large")
-            batch_size = extra.get("batch_size", 16)  # reduce if low on GPU mem
-            compute_type = extra.get("compute_type", "float16")  # change to "int8" if low on GPU mem (may reduce accuracy)
+            whisper_model = extra.get("model_name") or os.getenv("WHISPERX_MODEL_NAME", "small")
+            batch_size    = int(os.getenv("WHISPERX_BATCH_SIZE", extra.get("batch_size", 1)))
+            compute_type  = extra.get("compute_type") or os.getenv("WHISPERX_COMPUTE_TYPE", "float32")
 
             load_dotenv()
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            if device == "cpu" and compute_type not in {"int8", "float32"}:
-                logger.info("Switching compute_type from %s to float32 for CPU inference.", compute_type)
-                compute_type = "float32"
+            device = extra.get("device") or os.getenv("WHISPERX_DEVICE") \
+                     or ("cuda" if torch.cuda.is_available() else "cpu")
 
             logger.info(
                 "Starting transcription run for audio=%s model=%s device=%s batch_size=%s compute_type=%s",
