@@ -131,6 +131,7 @@ if __name__ == "__main__":
         sys.stdout.flush()
 
     except Exception as exc:
+        logger.exception("Unhandled exception in WhisperX runner")
         error_data = {"error": str(exc), "type": type(exc).__name__}
         sys.stderr.write(f"❌ ASR Runner Error: {json.dumps(error_data, indent=2)}\n")
         sys.exit(1)
