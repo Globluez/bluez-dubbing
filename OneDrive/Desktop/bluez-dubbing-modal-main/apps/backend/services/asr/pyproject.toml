@@ -1,0 +1,18 @@
+[project]
+name = "asr"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.11.9",
+    "common-schemas",
+    "fastapi>=0.118.0",
+    "uvicorn[standard]>=0.37.0",
+]
+
+[tool.uv.sources]
+common-schemas = { path = "../../libs/common-schemas" , editable = true }
+
+[tool.uvicorn]
+reload = false
