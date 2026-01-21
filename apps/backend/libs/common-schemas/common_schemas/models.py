@@ -153,3 +153,4 @@ class TTSRegenerateRequest(BaseModel):
     segment_id: str
     text: str
     lang: Optional[str] = None
+    audio_prompt_url: Optional[str] = None

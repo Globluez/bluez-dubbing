@@ -876,6 +876,51 @@ const ttsReview = {
     textarea.rows = Math.max(2, Math.min(6, Math.ceil((textarea.value.length || 1) / 60)));
     textLabel.appendChild(textarea);
     
+    const audioPromptSection = document.createElement("div");
+    audioPromptSection.className = "audio-prompt-upload";
+    
+    const audioPromptLabel = document.createElement("label");
+    audioPromptLabel.textContent = "Custom audio prompt (optional)";
+    audioPromptLabel.className = "audio-prompt-label";
+    
+    const audioPromptInput = document.createElement("input");
+    audioPromptInput.type = "file";
+    audioPromptInput.accept = "audio/*";
+    audioPromptInput.dataset.segmentId = segId;
+    audioPromptInput.dataset.role = "audio-prompt";
+    audioPromptInput.className = "audio-prompt-input";
+    
+    const audioPromptPreview = document.createElement("div");
+    audioPromptPreview.className = "audio-prompt-preview";
+    audioPromptPreview.dataset.segmentId = segId;
+    
+    audioPromptInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const blobUrl = URL.createObjectURL(file);
+        audioPromptPreview.innerHTML = "";
+        const previewAudio = document.createElement("audio");
+        previewAudio.controls = true;
+        previewAudio.src = blobUrl;
+        previewAudio.className = "audio-prompt-player";
+        audioPromptPreview.appendChild(previewAudio);
+        
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "ghost small";
+        removeBtn.textContent = "Remove";
+        removeBtn.onclick = () => {
+          audioPromptInput.value = "";
+          audioPromptPreview.innerHTML = "";
+          URL.revokeObjectURL(blobUrl);
+        };
+        audioPromptPreview.appendChild(removeBtn);
+      }
+    };
+    
+    audioPromptLabel.appendChild(audioPromptInput);
+    audioPromptSection.append(audioPromptLabel, audioPromptPreview);
+    
     const controls = document.createElement("div");
     controls.className = "segment-controls";
     
@@ -916,7 +961,7 @@ const ttsReview = {
     statusSpan.textContent = "Ready.";
     
     controls.append(langLabelEl, regenBtn, statusSpan);
-    wrapper.append(header, audioContainer, textLabel, controls);
+    wrapper.append(header, audioContainer, textLabel, audioPromptSection, controls);
     el.tts.body.appendChild(wrapper);
     
     state.pendingReviews.tts.segmentRefs.set(segId, {
@@ -925,7 +970,9 @@ const ttsReview = {
       textArea: textarea,
       langControl,
       regenerateBtn: regenBtn,
-      statusLabel: statusSpan
+      statusLabel: statusSpan,
+      audioPromptInput,
+      audioPromptPreview
     });
   },
 
@@ -980,16 +1027,28 @@ const ttsReview = {
     if (refs.statusLabel) refs.statusLabel.textContent = "Regenerating…";
     
     try {
+      // Build FormData to support audio file upload
+      const formData = new FormData();
+      formData.append("run_id", review.runId);
+      formData.append("segment_id", segmentId);
+      formData.append("text", textValue);
+      
+      if (review.language) {
+        formData.append("language", review.language);
+      }
+      
+      if (langValue) {
+        formData.append("lang", langValue);
+      }
+      
+      // Add custom audio prompt file if uploaded
+      if (refs.audioPromptInput?.files?.length > 0) {
+        formData.append("audio_prompt_file", refs.audioPromptInput.files[0]);
+      }
+      
       const response = await fetch(API.routes.regenerateTTS, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          run_id: review.runId,
-          language: review.language || null,
-          segment_id: segmentId,
-          text: textValue,
-          lang: langValue || null
-        })
+        body: formData
       });
       
       if (!response.ok) throw new Error(`Server responded with ${response.status}`);

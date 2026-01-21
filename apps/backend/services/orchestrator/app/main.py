@@ -391,11 +391,6 @@ def _persist_uploaded_file_sync(file: UploadFile, uploads_dir: Path) -> Path:
             pass
 
 
-async def persist_uploaded_file(file: UploadFile, uploads_dir: Path) -> Path:
-    # Offload large upload hashing/copying work so we don't block the event loop for UI requests.
-    return await asyncio.to_thread(_persist_uploaded_file_sync, file, uploads_dir)
-
-
 def raw_audio_cache_key(media_digest: str) -> str:
     return media_digest
 
@@ -403,16 +398,6 @@ def raw_audio_cache_key(media_digest: str) -> str:
 def raw_audio_cache_path(cache_key: str) -> Path:
     prefix = cache_key[:2] if len(cache_key) >= 2 else "00"
     return RAW_AUDIO_CACHE / prefix / cache_key / RAW_AUDIO_CACHE_FILENAME
-
-
-async def load_cached_raw_audio(cache_key: str, target_path: Path) -> bool:
-    cache_file = raw_audio_cache_path(cache_key)
-    if not cache_file.exists():
-        return False
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    await run_in_thread(shutil.copy, cache_file, target_path)
-    return True
-
 
 async def store_raw_audio_cache(cache_key: str, source_path: Path) -> None:
     cache_file = raw_audio_cache_path(cache_key)
@@ -432,6 +417,18 @@ def emit_progress(event: Dict[str, Any]) -> None:
 #-------------------------------------------------------------------------------------------------------------#
 #----------------------- Orchestrator's Helper class and async functions -------------------------------------#
 #-------------------------------------------------------------------------------------------------------------#
+
+async def persist_uploaded_file(file: UploadFile, uploads_dir: Path) -> Path:
+    # Offload large upload hashing/copying work so we don't block the event loop for UI requests.
+    return await asyncio.to_thread(_persist_uploaded_file_sync, file, uploads_dir)
+
+async def load_cached_raw_audio(cache_key: str, target_path: Path) -> bool:
+    cache_file = raw_audio_cache_path(cache_key)
+    if not cache_file.exists():
+        return False
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    await run_in_thread(shutil.copy, cache_file, target_path)
+    return True
 
 async def wait_for_transcription_review(run_id: str) -> ASRResponse:
     loop = asyncio.get_running_loop()
@@ -977,6 +974,7 @@ async def regenerate_tts_segment_audio(
     segment_id: str,
     text: str,
     lang: Optional[str],
+    audio_prompt_url: Optional[str] = None, # if we want to give different audio prompt than the original one
 ) -> SegmentAudioOut:
     seg_lock = session.segment_locks.get(segment_id)
     if seg_lock is None:
@@ -1004,7 +1002,7 @@ async def regenerate_tts_segment_audio(
                 text=updated_text,
                 speaker_id=state.speaker_id,
                 lang=segment_language,
-                audio_prompt_url=state.audio_prompt_url,
+                audio_prompt_url= audio_prompt_url or state.audio_prompt_url,
                 segment_id=segment_id,
                 legacy_audio_path=state.audio_url,
             )
@@ -1355,26 +1353,56 @@ async def pipeline_submit_tts_review(review: TTSReviewRequest) -> JSONResponse:
 
 
 @app.post(f"{JOBS_PREFIX}/tts_review/regenerate")
-async def pipeline_regenerate_tts_segment(request: TTSRegenerateRequest) -> JSONResponse:
-    run_id = (request.run_id or "").strip()
+async def pipeline_regenerate_tts_segment(
+    run_id: str = Form(...),
+    segment_id: str = Form(...),
+    text: str = Form(...),
+    language: Optional[str] = Form(None),
+    lang: Optional[str] = Form(None),
+    audio_prompt_file: Optional[UploadFile] = File(None),
+) -> JSONResponse:
+    run_id = (run_id or "").strip()
     if not run_id:
         raise HTTPException(400, "run_id is required")
-    if not request.segment_id:
+    if not segment_id:
         raise HTTPException(400, "segment_id is required")
-    key = tts_session_key(run_id, request.language)
+    key = tts_session_key(run_id, language)
     session = TTS_REVIEW_SESSIONS.get(key)
     if session is None:
         raise HTTPException(404, "No pending TTS review for this run and language.")
     if session.future.done():
         raise HTTPException(409, "TTS review already submitted for this language.")
 
-    state = await regenerate_tts_segment_audio(session, request.segment_id, request.text, request.lang)
+    # Handle custom audio prompt upload if provided
+    audio_prompt_url = None
+    if audio_prompt_file and audio_prompt_file.filename:
+        try:
+            # Store the uploaded audio file in the session workspace
+            audio_prompts_dir = session.workspace / "audio_prompts"
+            audio_prompts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate a safe filename
+            safe_name = f"{segment_id}_{safe_filename(audio_prompt_file.filename)}"
+            audio_prompt_path = audio_prompts_dir / safe_name
+            
+            # Save the uploaded file
+            with audio_prompt_path.open("wb") as dest:
+                content = await audio_prompt_file.read()
+                dest.write(content)
+            
+            audio_prompt_url = str(audio_prompt_path)
+            logger.info(f"Custom audio prompt uploaded for segment {segment_id}: {audio_prompt_url}")
+        except Exception as exc:
+            logger.warning(f"Failed to process audio prompt upload: {exc}")
+            # Continue without custom prompt if upload fails
+
+    state = await regenerate_tts_segment_audio(session, segment_id, text, lang, audio_prompt_url)
     segment_payload = serialize_tts_review_segment(state)
     emit_progress(
         {
             "type": "tts_review_regenerated",
             "run_id": run_id,
-            "language": request.language,
+            "language": language,
             "segment": segment_payload,
         }
     )

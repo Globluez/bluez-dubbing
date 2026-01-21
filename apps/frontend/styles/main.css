@@ -671,3 +671,67 @@ body[data-theme="light"] .badge {
 body[data-theme="light"] .hint {
     color: rgba(96, 102, 116, 0.75);
 }
+
+/* Audio prompt upload styling */
+.audio-prompt-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(88, 101, 242, 0.08);
+    border: 1px dashed rgba(88, 101, 242, 0.3);
+}
+
+body[data-theme="light"] .audio-prompt-upload {
+    background: rgba(88, 101, 242, 0.05);
+    border-color: rgba(88, 101, 242, 0.25);
+}
+
+.audio-prompt-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    opacity: 0.9;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.audio-prompt-input {
+    font-size: 0.85rem;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(123, 132, 155, 0.35);
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    cursor: pointer;
+}
+
+body[data-theme="light"] .audio-prompt-input {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(193, 201, 216, 0.7);
+}
+
+.audio-prompt-input:hover {
+    border-color: rgba(88, 101, 242, 0.6);
+}
+
+.audio-prompt-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.audio-prompt-player {
+    width: 100%;
+    max-width: 400px;
+    height: 40px;
+    border-radius: 8px;
+}
+
+.audio-prompt-preview button.ghost.small {
+    align-self: flex-start;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
