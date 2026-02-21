@@ -11,7 +11,6 @@ import pyrubberband as prb
 import os
 import shutil
 import torch
-import torchaudio
 import tempfile
 
 _silero_vad_lock = threading.Lock()
@@ -29,6 +28,22 @@ _AUDIO_EXTENSIONS = {
     ".aif",
     ".opus",
 }
+
+torchaudio = None
+
+
+def _require_torchaudio():
+    global torchaudio
+    if torchaudio is None:
+        try:
+            import torchaudio as _torchaudio
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "torchaudio is required for VAD-based audio utilities "
+                "(`check_audio_structure`, `trim_audio_with_vad`)."
+            ) from exc
+        torchaudio = _torchaudio
+    return torchaudio
 
 _VIDEO_EXTENSIONS = {
     ".mp4",
@@ -64,6 +79,7 @@ _duration_cache: Dict[str, float] = {}
 def check_audio_structure(audio_file: str):
 
     model, utils = _load_silero_vad()
+    ta = _require_torchaudio()
 
     (get_speech_timestamps, _, read_audio, *_) = utils
     
@@ -87,15 +103,15 @@ def check_audio_structure(audio_file: str):
         print(f"\nLast speech ends at: {last_speech_end:.2f}s")
         
         # Trim audio to last speech end
-        waveform, sr = torchaudio.load(audio_file)
+        waveform, sr = ta.load(audio_file)
         trim_sample = int(last_speech_end * sr) + int(0.1 * sr)  # Add 100ms padding
         trimmed_waveform = waveform[:, :trim_sample]
         
         # Save trimmed audio
-        torchaudio.save('trimmed_output.wav', trimmed_waveform, sr)
+        ta.save('trimmed_output.wav', trimmed_waveform, sr)
         print(f"Saved trimmed audio (duration: {trim_sample/sr:.2f}s)")
 
-    signal, fs = torchaudio.load(audio_file)
+    signal, fs = ta.load(audio_file)
     signal = signal.squeeze()
     time = torch.linspace(0, signal.shape[0]/fs, steps=signal.shape[0])
 
@@ -153,7 +169,8 @@ def trim_audio_with_vad(
             return 0.0, str(output_path)
         return ([], []) if several_seg else (0.0, str(audio_path))
 
-    waveform, original_sr = torchaudio.load(str(audio_path))
+    ta = _require_torchaudio()
+    waveform, original_sr = ta.load(str(audio_path))
 
     if several_seg:
         output_dir = output_path.parent / output_path.stem if output_path.suffix else output_path
@@ -174,7 +191,7 @@ def trim_audio_with_vad(
 
             audio_basename = audio_path.stem
             segment_file = output_dir / f"{audio_basename}_segment_{i:03d}.wav"
-            torchaudio.save(str(segment_file), segment_waveform, original_sr)
+            ta.save(str(segment_file), segment_waveform, original_sr)
 
             duration = segment_waveform.shape[1] / original_sr
             durations.append(duration)
@@ -195,7 +212,7 @@ def trim_audio_with_vad(
         return 0.0, str(output_path)
 
     trimmed_waveform = waveform[:, start_sample:end_sample]
-    torchaudio.save(str(output_path), trimmed_waveform, original_sr)
+    ta.save(str(output_path), trimmed_waveform, original_sr)
 
     duration = trimmed_waveform.shape[1] / original_sr
     return duration, str(output_path)
