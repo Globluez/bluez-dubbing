@@ -23,6 +23,35 @@ def _device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def _force_eager_attention(model: torch.nn.Module, logger) -> None:
+    """
+    Chatterbox alignment hooks require output_attentions=True, but recent
+    Transformers configs reject that when attn_implementation is "sdpa".
+    Force eager attention flags on the internal Llama config.
+    """
+    t3 = getattr(model, "t3", None)
+    tfmr = getattr(t3, "tfmr", None)
+    if tfmr is None:
+        return
+
+    cfg_candidates = [getattr(tfmr, "config", None), getattr(t3, "cfg", None)]
+    changed: list[str] = []
+    for cfg in cfg_candidates:
+        if cfg is None:
+            continue
+        for attr in ("_attn_implementation", "_attn_implementation_internal", "attn_implementation"):
+            if not hasattr(cfg, attr):
+                continue
+            try:
+                setattr(cfg, attr, "eager")
+                changed.append(attr)
+            except Exception:
+                continue
+
+    if changed:
+        logger.info("Forced eager attention for chatterbox (%s).", ", ".join(sorted(set(changed))))
+
+
 def _load_model(model_name: str, device: str, log_level: int):
     logger = get_service_logger("tts.chatterbox", log_level)
     key = (model_name, device)
@@ -30,10 +59,12 @@ def _load_model(model_name: str, device: str, log_level: int):
         cached = _MODEL_CACHE.get(key)
         if cached:
             logger.debug("Using cached chatterbox model=%s device=%s.", model_name, device)
+            _force_eager_attention(cached[0], logger)
             return cached
 
         load_start = time.perf_counter()
         model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        _force_eager_attention(model, logger)
         sample_rate = model.sr
 
         _MODEL_CACHE[key] = (model, sample_rate)
@@ -89,12 +120,28 @@ def _synthesize(req: TTSRequest) -> TTSResponse:
             output_file = workspace_path / f"{identifier}.wav"
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        wav = model.generate(
-            segment.text,
-            language_id=segment.lang,
-            audio_prompt_path=audio_prompt,
-            **generation_kwargs,
-        )
+        try:
+            wav = model.generate(
+                segment.text,
+                language_id=segment.lang,
+                audio_prompt_path=audio_prompt,
+                **generation_kwargs,
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            if "output_attentions" in msg and "attn_implementation" in msg and "sdpa" in msg:
+                logger.warning(
+                    "Chatterbox hit SDPA/output_attentions incompatibility; retrying with eager attention."
+                )
+                _force_eager_attention(model, logger)
+                wav = model.generate(
+                    segment.text,
+                    language_id=segment.lang,
+                    audio_prompt_path=audio_prompt,
+                    **generation_kwargs,
+                )
+            else:
+                raise
 
         ta.save(str(output_file), wav, sample_rate)
 
