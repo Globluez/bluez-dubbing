@@ -5,6 +5,7 @@ import logging
 import os
 import ctypes
 import importlib
+import inspect
 import sys
 import time
 import torch
@@ -22,6 +23,42 @@ try:
     torch.serialization.add_safe_globals([ListConfig, DictConfig, ContainerMetadata])
 except Exception:
     pass
+
+
+def _patch_hf_hub_download_compat() -> None:
+    """
+    Compatibility shim for huggingface_hub>=1.0 where hf_hub_download removed
+    `use_auth_token` in favor of `token`.
+    """
+    try:
+        import huggingface_hub
+    except Exception:
+        return
+
+    try:
+        sig = inspect.signature(huggingface_hub.hf_hub_download)
+    except Exception:
+        return
+
+    if "use_auth_token" in sig.parameters:
+        return
+
+    original = huggingface_hub.hf_hub_download
+
+    def _compat_hf_hub_download(*args, use_auth_token=None, **kwargs):
+        if use_auth_token is not None and "token" not in kwargs:
+            kwargs["token"] = use_auth_token
+        return original(*args, **kwargs)
+
+    huggingface_hub.hf_hub_download = _compat_hf_hub_download  # type: ignore[assignment]
+    try:
+        import huggingface_hub.file_download as file_download
+        file_download.hf_hub_download = _compat_hf_hub_download  # type: ignore[assignment]
+    except Exception:
+        pass
+
+
+_patch_hf_hub_download_compat()
 
 import whisperx
 from dotenv import load_dotenv
