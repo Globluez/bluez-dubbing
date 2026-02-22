@@ -27,3 +27,8 @@ assets/not_keep/
 
 # secret files
 .env
+
+# Agent files
+plan/
+CLAUDE.md
+progress.md
